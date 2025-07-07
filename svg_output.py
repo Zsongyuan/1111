@@ -128,6 +128,8 @@ class BatchSVGProcessor:
     def __init__(self):
         pass
     
+    # 文件: svg_output.py
+
     def create_comparison_image(self, 
                                original_path: str,
                                processed_path: str,
@@ -147,6 +149,11 @@ class BatchSVGProcessor:
         # 确保尺寸一致
         h1, w1 = original_img.shape[:2]
         h2, w2 = processed_img.shape[:2]
+        
+        # --- 修复开始 ---
+        # 预先定义 h 和 w，确保它们总是有值
+        h, w = h1, w1
+        # --- 修复结束 ---
         
         if (h1, w1) != (h2, w2):
             # 调整到相同尺寸

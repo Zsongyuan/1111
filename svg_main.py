@@ -14,7 +14,7 @@ import config
 import getK
 from api import get_skin_mask
 from svg_parser import SVGParser
-from svg_region_mapper import SVGRegionMapper, FastSVGRegionMapper
+from svg_region_mapper import SVGRegionMapper, FastSVGRegionMapper, SVGElement
 from svg_color_quantizer import RegionAwareSVGQuantizer
 from svg_palette_matching import SVGPaletteMatcher
 from svg_output import SVGOutput, BatchSVGProcessor
@@ -126,21 +126,38 @@ class SVGDigitalPaintingProcessor:
             
             # 5. 将mask映射到SVG元素
             print("\n映射皮肤区域到SVG元素...")
-            region_mapper = SVGRegionMapper(svg_parser, skin_mask)
-            skin_indices, env_indices = region_mapper.map_regions()
-            importance_weights = region_mapper.get_element_importance_weights()
+            # 根据处理模式选择合适的映射器
+            mode = getattr(svg_config, 'PROCESSING_MODE', 'fast')
+            if mode == 'fast':
+                print("使用快速区域映射器...")
+                region_mapper = FastSVGRegionMapper(svg_parser, skin_mask)
+            else:
+                print("使用精确区域映射器...")
+                region_mapper = SVGRegionMapper(svg_parser, skin_mask)
             
+            skin_indices, env_indices = region_mapper.map_regions()
+
+            # --- 修复核心：调整代码执行顺序 ---
+            # 1. 在调用权重计算之前，先根据索引准备好完整的皮肤SVGElement对象列表
+            skin_indices_set = set(skin_indices)
+            all_skin_svg_elements = [e for e in elements if e.index in skin_indices_set]
+
+            # 2. 将准备好的列表作为参数，传递给权重计算函数
+            importance_weights = region_mapper.get_element_importance_weights(all_skin_svg_elements)
+            # --- 修复结束 ---
+
             print(f"皮肤元素: {len(skin_indices)} 个")
             print(f"环境元素: {len(env_indices)} 个")
             
-            # 6. 准备颜色数据
+            # 6. 准备颜色数据 (这部分保持不变)
             skin_elements = [(idx, elements[idx].fill_color) for idx in skin_indices]
             env_elements = [(idx, elements[idx].fill_color) for idx in env_indices]
             
             # 7. 迭代优化颜色分配
             print("\n开始颜色量化...")
             best_result = self._iterative_color_optimization(
-                skin_elements, env_elements, target_k, skin_ratio, importance_weights
+                skin_elements, env_elements, target_k, skin_ratio, 
+                importance_weights, region_mapper
             )
             
             # 8. 色板匹配
@@ -164,61 +181,90 @@ class SVGDigitalPaintingProcessor:
                                     target_k: int,
                                     skin_ratio: float,
                                     importance_weights: Dict[int, float],
+                                    region_mapper: SVGRegionMapper,
                                     max_iterations: int = 5) -> Dict[int, Tuple[int, int, int]]:
         """
-        迭代优化颜色分配直到接近目标颜色数
-        参考位图版本的迭代策略
+        (已修复) 迭代优化颜色分配，并集成关键特征颜色保留机制。
         """
-        current_k = target_k
-        best_result = None
-        best_diff = float('inf')
+        reserved_color_mapping = {}
+        quantization_skin_elements = []
         
+        print("\n识别并保留关键特征颜色(眼睛、嘴唇)...")
+        # 获取完整的SVGElement对象列表以进行分析
+        skin_indices_set = {idx for idx, _ in skin_elements}
+        all_skin_svg_elements = [e for e in region_mapper.svg_parser.elements if e.index in skin_indices_set]
+        
+        for idx, color in skin_elements:
+            svg_element = next((e for e in all_skin_svg_elements if e.index == idx), None)
+            # 调用新的、更精确的特征识别函数
+            if svg_element and region_mapper._is_likely_facial_feature(svg_element, all_skin_svg_elements):
+                reserved_color_mapping[idx] = color
+            else:
+                quantization_skin_elements.append((idx, color))
+
+        num_reserved_colors = len(set(reserved_color_mapping.values()))
+        print(f"已保留 {len(reserved_color_mapping)} 个元素, 共 {num_reserved_colors} 种关键颜色。")
+
+        # --- 核心逻辑修复与加固 ---
+        # 如果保留颜色过多，发出警告并自动禁用保留，以防止崩溃
+        if num_reserved_colors >= target_k // 2 and num_reserved_colors > 5:
+            print(f"警告：保留的颜色({num_reserved_colors})过多，已自动禁用保留机制以确保程序稳定。")
+            reserved_color_mapping.clear()
+            quantization_skin_elements = skin_elements
+            num_reserved_colors = 0
+
+        current_k = target_k
+        best_result = {}
+        # 将保留的颜色先放入最佳结果，确保它们始终存在
+        best_result.update(reserved_color_mapping)
+        best_diff = float('inf')
+
         for iteration in range(max_iterations):
-            # 计算颜色分配
+            # 1. 确保量化目标数是有效的正数
+            quantization_target_k = max(1, current_k - num_reserved_colors)
+            
+            # 2. 计算颜色分配
             k_skin, k_env = self._calculate_color_distribution(
-                current_k, skin_ratio, len(skin_elements), len(env_elements)
+                quantization_target_k, skin_ratio, len(quantization_skin_elements), len(env_elements)
             )
-            
-            print(f"\n迭代 {iteration + 1}: 分配颜色 - 皮肤 {k_skin} 色，环境 {k_env} 色 (当前总目标 {current_k} 色)")
-            
-            # 执行量化
+            print(f"\n迭代 {iteration + 1}: 量化目标(皮肤 {k_skin}, 环境 {k_env}) | 总目标 {current_k} | 已保留 {num_reserved_colors}")
+
+            # 3. 对未保留的颜色执行量化
             color_mapping = self.quantizer.quantize_by_regions(
-                skin_elements, env_elements, k_skin, k_env, 
+                quantization_skin_elements, env_elements, k_skin, k_env, 
                 importance_weights, SATURATION_FACTOR
             )
             
-            # 统计实际颜色数
+            # 4. 将保留的颜色加回当前迭代的结果中
+            color_mapping.update(reserved_color_mapping)
+            
             unique_colors = len(set(color_mapping.values()))
             diff = abs(unique_colors - target_k)
-            
             print(f"迭代 {iteration + 1}: 实际颜色数 = {unique_colors}")
-            
-            # 保存最佳结果
+
             if diff < best_diff:
                 best_diff = diff
-                best_result = color_mapping
+                best_result = color_mapping.copy()
             
-            # 如果达到目标，退出
-            if diff <= 2:  # 容差范围
-                print(f"达到目标颜色数，差异: {diff}")
+            if diff <= 2: # 如果误差在2以内，视为成功
+                print(f"已达到目标颜色数，差异: {diff}")
                 break
             
-            # 使用策略类建议下一次的调整
+            # 5. 更新下一次迭代的总目标数
             current_k = self.color_strategy.suggest_adjustment(
                 actual_colors=unique_colors,
                 target_colors=target_k,
                 current_k=current_k
             )
         
-        if best_result is None:
-            # 如果没有找到好的结果，使用最后一次的结果
-            best_result = color_mapping
-            
-        # 打印最终统计
+        # 6. 如果从未成功执行过，确保返回一个有效（但可能不理想）的结果
+        if not best_result:
+            # 合并环境和保留的颜色，确保至少有东西输出
+            env_mapping = self.quantizer.quantize_by_regions([], env_elements, 1, max(1, target_k - num_reserved_colors), importance_weights, SATURATION_FACTOR)
+            best_result.update(env_mapping)
+
         final_colors = len(set(best_result.values()))
         print(f"\n最终颜色数量: {final_colors}，目标颜色数: {target_k}")
-        if abs(final_colors - target_k) > 2:
-            print("警告：最终颜色数量与目标颜色数差异较大！")
             
         return best_result
     
