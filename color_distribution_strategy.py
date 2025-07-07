@@ -12,8 +12,8 @@ class ColorDistributionStrategy:
     def __init__(self, 
                  skin_ratio_threshold: float = 0.1,
                  min_skin_colors: int = 8,      # 也可以适当提高最小颜色数
-                 default_skin_weight: int = 6,  # <--- 将默认权重从3提高到6
-                 enhanced_skin_weight: int = 8):# <--- 也可以一并提高
+                 default_skin_weight: int = 12,  # <--- 将默认权重从3提高到12
+                 enhanced_skin_weight: int = 16): # <--- 也可以一并提高
         self.skin_ratio_threshold = skin_ratio_threshold
         self.min_skin_colors = min_skin_colors
         self.default_skin_weight = default_skin_weight
@@ -71,32 +71,31 @@ class ColorDistributionStrategy:
         return k_skin, k_env
     
     def _apply_constraints(self, k_skin: int, k_env: int, target_k: int, skin_ratio: float) -> Tuple[int, int]:
-        """应用分配约束"""
-        # 确保至少各有1种颜色
-        k_skin = max(1, k_skin)
-        k_env = max(1, k_env)
+        """(已修复) 应用分配约束，确保最小颜色数规则总是被正确应用"""
         
-        # 当皮肤是主体时，确保有足够的颜色
-        if skin_ratio > self.skin_ratio_threshold and k_skin < self.min_skin_colors:
+        # 1. 检查是否需要应用最小颜色数规则
+        # 只有在计算出的皮肤颜色数低于我们设定的下限时，才进行干预
+        if k_skin < self.min_skin_colors:
+            print(f"触发最小颜色数规则：计算出的皮肤颜色({k_skin})少于设定的最小值({self.min_skin_colors})。")
+            # 将皮肤颜色数提升到设定的最小值，但不能超过总数减一（至少给环境留一个）
             k_skin = min(self.min_skin_colors, target_k - 1)
-            k_env = target_k - k_skin
-            print(f"皮肤是主体，调整为最少 {self.min_skin_colors} 种颜色")
-        
-        # 再次确保约束
+            print(f"  > 调整后：皮肤颜色数提升至 {k_skin}")
+
+        # 2. 确保环境区域至少有1种颜色
+        # 即使上一步提升了皮肤颜色数，也要保证环境的最低配额
+        if k_skin >= target_k:
+            k_skin = target_k - 1
+
+        # 3. 基于可能已更新的k_skin，重新计算k_env，以确保总数不变
+        k_env = target_k - k_skin
+
+        # 4. 对k_env也设置一个最低值1的保护
         if k_env < 1:
             k_env = 1
+            # 如果因为提升k_env导致总数超了，就从k_skin里减回来
             k_skin = target_k - k_env
-        
-        # 确保总数正确
-        if k_skin + k_env != target_k:
-            # 调整环境颜色数以匹配总数
-            k_env = target_k - k_skin
-        
-        # 最终检查
-        k_skin = max(1, min(k_skin, target_k - 1))
-        k_env = max(1, target_k - k_skin)
-        
-        print(f"最终分配: 皮肤={k_skin}, 环境={k_env}, 总计={k_skin + k_env}")
+
+        print(f"约束应用后 -> 皮肤: {k_skin}, 环境: {k_env}, 总计: {k_skin + k_env}")
         
         return k_skin, k_env
     

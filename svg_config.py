@@ -28,7 +28,7 @@ SAVE_INTERMEDIATE_FILES = False
 
 # 颜色量化配置
 QUANTIZATION_CONFIG = {
-    "saturation_factor": 1.2,
+    "saturation_factor": 1.3,
     "facial_feature_weight": 3.0,
     "boundary_element_weight": 1.5,
     "gpu_batch_size": 1000

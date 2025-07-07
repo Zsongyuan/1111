@@ -101,13 +101,13 @@ class SVGDigitalPaintingProcessor:
         print(f"目标颜色数: {target_k}")
         
         # 2. 解析SVG文件
-        print("\n解析SVG文件...")
+        # print("\n解析SVG文件...")
         svg_parser = SVGParser(svg_file_path)
         elements = svg_parser.parse()
-        print(f"找到 {len(elements)} 个path元素")
+        # print(f"找到 {len(elements)} 个path元素")
         
         # 3. 生成位图用于皮肤分割
-        print("\n生成位图用于皮肤分割...")
+        # print("\n生成位图用于皮肤分割...")
         bitmap = svg_parser.render_to_bitmap(dpi=dpi)
         
         # 保存临时位图文件
@@ -122,17 +122,17 @@ class SVGDigitalPaintingProcessor:
             
             # 计算皮肤区域占比
             skin_ratio = np.sum(skin_mask > 0) / (skin_mask.shape[0] * skin_mask.shape[1])
-            print(f"皮肤区域占比: {skin_ratio:.2%}")
+            # print(f"皮肤区域占比: {skin_ratio:.2%}")
             
             # 5. 将mask映射到SVG元素
-            print("\n映射皮肤区域到SVG元素...")
+            # print("\n映射皮肤区域到SVG元素...")
             # 根据处理模式选择合适的映射器
             mode = getattr(svg_config, 'PROCESSING_MODE', 'fast')
             if mode == 'fast':
-                print("使用快速区域映射器...")
+                # print("使用快速区域映射器...")
                 region_mapper = FastSVGRegionMapper(svg_parser, skin_mask)
             else:
-                print("使用精确区域映射器...")
+                # print("使用精确区域映射器...")
                 region_mapper = SVGRegionMapper(svg_parser, skin_mask)
             
             skin_indices, env_indices = region_mapper.map_regions()
@@ -146,28 +146,28 @@ class SVGDigitalPaintingProcessor:
             importance_weights = region_mapper.get_element_importance_weights(all_skin_svg_elements)
             # --- 修复结束 ---
 
-            print(f"皮肤元素: {len(skin_indices)} 个")
-            print(f"环境元素: {len(env_indices)} 个")
-            
+            # print(f"皮肤元素: {len(skin_indices)} 个")
+            # print(f"环境元素: {len(env_indices)} 个")
+
             # 6. 准备颜色数据 (这部分保持不变)
             skin_elements = [(idx, elements[idx].fill_color) for idx in skin_indices]
             env_elements = [(idx, elements[idx].fill_color) for idx in env_indices]
             
             # 7. 迭代优化颜色分配
-            print("\n开始颜色量化...")
+            # print("\n开始颜色量化...")
             best_result = self._iterative_color_optimization(
                 skin_elements, env_elements, target_k, skin_ratio, 
                 importance_weights, region_mapper
             )
             
             # 8. 色板匹配
-            print("\n进行色板匹配...")
+            # print("\n进行色板匹配...")
             final_color_mapping = self._apply_palette_matching(
                 best_result, skin_elements, env_elements
             )
             
             # 9. 输出结果
-            print("\n生成输出文件...")
+            # print("\n生成输出文件...")
             self._save_results(svg_parser, final_color_mapping, svg_file_path, output_dir, dpi)
             
         finally:
@@ -188,8 +188,8 @@ class SVGDigitalPaintingProcessor:
         """
         reserved_color_mapping = {}
         quantization_skin_elements = []
-        
-        print("\n识别并保留关键特征颜色(眼睛、嘴唇)...")
+
+        # print("\n识别并保留关键特征颜色(眼睛、嘴唇)...")
         # 获取完整的SVGElement对象列表以进行分析
         skin_indices_set = {idx for idx, _ in skin_elements}
         all_skin_svg_elements = [e for e in region_mapper.svg_parser.elements if e.index in skin_indices_set]
@@ -203,12 +203,12 @@ class SVGDigitalPaintingProcessor:
                 quantization_skin_elements.append((idx, color))
 
         num_reserved_colors = len(set(reserved_color_mapping.values()))
-        print(f"已保留 {len(reserved_color_mapping)} 个元素, 共 {num_reserved_colors} 种关键颜色。")
+        # print(f"已保留 {len(reserved_color_mapping)} 个元素, 共 {num_reserved_colors} 种关键颜色。")
 
         # --- 核心逻辑修复与加固 ---
         # 如果保留颜色过多，发出警告并自动禁用保留，以防止崩溃
         if num_reserved_colors >= target_k // 2 and num_reserved_colors > 5:
-            print(f"警告：保留的颜色({num_reserved_colors})过多，已自动禁用保留机制以确保程序稳定。")
+            # print(f"警告：保留的颜色({num_reserved_colors})过多，已自动禁用保留机制以确保程序稳定。")
             reserved_color_mapping.clear()
             quantization_skin_elements = skin_elements
             num_reserved_colors = 0
@@ -227,7 +227,7 @@ class SVGDigitalPaintingProcessor:
             k_skin, k_env = self._calculate_color_distribution(
                 quantization_target_k, skin_ratio, len(quantization_skin_elements), len(env_elements)
             )
-            print(f"\n迭代 {iteration + 1}: 量化目标(皮肤 {k_skin}, 环境 {k_env}) | 总目标 {current_k} | 已保留 {num_reserved_colors}")
+            # print(f"\n迭代 {iteration + 1}: 量化目标(皮肤 {k_skin}, 环境 {k_env}) | 总目标 {current_k} | 已保留 {num_reserved_colors}")
 
             # 3. 对未保留的颜色执行量化
             color_mapping = self.quantizer.quantize_by_regions(
@@ -240,14 +240,14 @@ class SVGDigitalPaintingProcessor:
             
             unique_colors = len(set(color_mapping.values()))
             diff = abs(unique_colors - target_k)
-            print(f"迭代 {iteration + 1}: 实际颜色数 = {unique_colors}")
+            # print(f"迭代 {iteration + 1}: 实际颜色数 = {unique_colors}")
 
             if diff < best_diff:
                 best_diff = diff
                 best_result = color_mapping.copy()
             
             if diff <= 2: # 如果误差在2以内，视为成功
-                print(f"已达到目标颜色数，差异: {diff}")
+                # print(f"已达到目标颜色数，差异: {diff}")
                 break
             
             # 5. 更新下一次迭代的总目标数
