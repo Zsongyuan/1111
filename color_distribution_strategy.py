@@ -11,9 +11,9 @@ class ColorDistributionStrategy:
     
     def __init__(self, 
                  skin_ratio_threshold: float = 0.1,
-                 min_skin_colors: int = 5,
-                 default_skin_weight: int = 3,
-                 enhanced_skin_weight: int = 5):
+                 min_skin_colors: int = 8,      # 也可以适当提高最小颜色数
+                 default_skin_weight: int = 6,  # <--- 将默认权重从3提高到6
+                 enhanced_skin_weight: int = 8):# <--- 也可以一并提高
         self.skin_ratio_threshold = skin_ratio_threshold
         self.min_skin_colors = min_skin_colors
         self.default_skin_weight = default_skin_weight
@@ -27,52 +27,45 @@ class ColorDistributionStrategy:
                              skin_pixels: int = 0,
                              env_pixels: int = 0) -> Tuple[int, int]:
         """
-        计算颜色分配
-        
-        参数:
-            target_k: 目标总颜色数
-            skin_ratio: 皮肤区域占比（0-1）
-            n_skin_elements: 皮肤元素数量
-            n_env_elements: 环境元素数量
-            skin_pixels: 皮肤像素数（可选，用于更精确的计算）
-            env_pixels: 环境像素数（可选）
+        计算颜色分配 (已增加对无皮肤情况的处理)
         """
-        # 选择权重策略
+        # --- 核心修复：增加对无皮肤情况的特殊处理 ---
+        # 如果一开始就没有检测到任何皮肤元素，则直接将所有颜色分配给环境
+        if n_skin_elements == 0:
+            print("未检测到皮肤元素，所有颜色将分配给环境区域。")
+            k_skin = 0
+            k_env = target_k
+            return k_skin, k_env
+        # --- 修复结束 ---
+            
+        # (如果检测到皮肤元素，则继续执行原有的权重分配逻辑)
         if skin_ratio > self.skin_ratio_threshold:
-            # 皮肤是主体，使用增强权重
             weight_skin = self.enhanced_skin_weight
             print(f"皮肤区域占比 {skin_ratio:.1%} > {self.skin_ratio_threshold:.1%}, 使用增强权重")
         else:
-            # 皮肤是次要部分，使用默认权重
             weight_skin = self.default_skin_weight
             print(f"皮肤区域占比 {skin_ratio:.1%} <= {self.skin_ratio_threshold:.1%}, 使用默认权重")
         
-        # 计算加权值
-        # 如果提供了像素数，优先使用像素数计算
         if skin_pixels > 0 and env_pixels > 0:
             weighted_skin = skin_pixels * weight_skin
             weighted_env = env_pixels
             print(f"基于像素计算: 皮肤像素={skin_pixels}, 环境像素={env_pixels}")
         else:
-            # 否则使用元素数量
             weighted_skin = n_skin_elements * weight_skin
             weighted_env = n_env_elements
             print(f"基于元素计算: 皮肤元素={n_skin_elements}, 环境元素={n_env_elements}")
         
         total_weight = weighted_skin + weighted_env
         
-        # 计算初始分配
         if total_weight == 0:
+            # 当所有元素数量都为0时（虽然不太可能发生），进行均分
             k_skin = target_k // 2
-            k_env = target_k - k_skin
         else:
-            # 基于权重比例分配
             k_skin = int(round(target_k * weighted_skin / total_weight))
-            k_env = target_k - k_skin
         
+        k_env = target_k - k_skin
         print(f"初始分配: 皮肤={k_skin}, 环境={k_env}")
         
-        # 应用约束条件
         k_skin, k_env = self._apply_constraints(k_skin, k_env, target_k, skin_ratio)
         
         return k_skin, k_env
