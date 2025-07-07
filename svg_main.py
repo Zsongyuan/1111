@@ -321,53 +321,33 @@ class SVGDigitalPaintingProcessor:
                      original_path: str,
                      output_dir: str,
                      dpi: int):
-        """保存处理结果"""
-        base_name = os.path.splitext(os.path.basename(original_path))[0]
-        
-        # 验证颜色映射
-        print("\n验证颜色映射...")
-        for idx, color in color_mapping.items():
-            if not isinstance(color, tuple) or len(color) != 3:
-                print(f"警告: 元素 {idx} 的颜色格式错误: {color}")
-            elif not all(isinstance(c, (int, np.integer)) for c in color):
-                # 尝试修复
-                fixed_color = tuple(int(c) for c in color)
-                color_mapping[idx] = fixed_color
-                print(f"修复: 元素 {idx} 的颜色从 {color} 转换为 {fixed_color}")
+        """
+        (已简化) 保存处理结果，仅输出与输入文件同名的SVG。
+        """
+        # 获取不带扩展名的基本文件名
+        base_name_with_ext = os.path.basename(original_path)
         
         # 创建SVG输出器
         svg_output = SVGOutput(svg_parser)
         
         # 更新颜色
-        svg_output.update_svg_colors(color_mapping)
+        try:
+            svg_output.update_svg_colors(color_mapping)
+        except Exception as e:
+            print(f"  > 警告：更新SVG颜色时出错: {e}")
+            return # 如果出错则不保存
+
+        # 准备输出路径
+        output_svg_path = os.path.join(output_dir, base_name_with_ext)
         
-        # 保存SVG
-        svg_path = os.path.join(output_dir, f"{base_name}_digital_painting.svg")
-        svg_output.save_svg(svg_path)
-        
-        # 渲染并保存位图
-        bitmap_path = os.path.join(output_dir, f"{base_name}_digital_painting.png")
-        svg_output.render_to_bitmap(bitmap_path, dpi)
-        
-        # 生成对比图
-        comparison_path = os.path.join(output_dir, f"{base_name}_comparison.png")
-        self.batch_processor.create_comparison_image(
-            original_path, svg_path, comparison_path, dpi
-        )
-        
-        # 生成色板图
-        palette_path = os.path.join(output_dir, f"{base_name}_palette.png")
-        self.batch_processor.generate_color_palette_image(color_mapping, palette_path)
-        
-        # 打印统计信息
-        unique_colors = len(set(color_mapping.values()))
-        print(f"\n处理完成!")
-        print(f"最终颜色数: {unique_colors}")
-        print(f"输出文件:")
-        print(f"  - SVG: {svg_path}")
-        print(f"  - PNG: {bitmap_path}")
-        print(f"  - 对比图: {comparison_path}")
-        print(f"  - 色板: {palette_path}")
+        # 保存最终的SVG文件
+        try:
+            svg_output.save_svg(output_svg_path)
+            final_colors = len(set(color_mapping.values()))
+            print(f"  > 处理完成! 最终颜色数: {final_colors}")
+            print(f"  > 输出文件: {output_svg_path}")
+        except Exception as e:
+            print(f"  > 严重错误：保存最终SVG文件失败: {e}")
     
     def process_folder(self, input_dir: str, output_dir: str, dpi: int = 300):
         """批量处理文件夹中的所有SVG文件"""
