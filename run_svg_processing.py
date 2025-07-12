@@ -95,7 +95,7 @@ def main():
 
     try:
         import svg_main
-        processor = svg_main.SVGDigitalPaintingProcessor(use_gpu=True)
+        processor = svg_main.FacialFeatureProtectedProcessor(use_gpu=True)
         processor.process_folder(input_dir, output_dir, dpi=300)
         
     except KeyboardInterrupt:
