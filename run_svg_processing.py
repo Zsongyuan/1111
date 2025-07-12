@@ -58,7 +58,7 @@ def main():
     """
     start_time = time.time()
     print("="*60)
-    print("开始 - 自动化处理模式")
+    print("SVG数字油画转换系统 - 自动化处理模式")
     print("="*60)
     
     input_dir, output_dir = "", ""

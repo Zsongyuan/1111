@@ -25,8 +25,18 @@ except ImportError:
     class ColorDistributionStrategy:
         def __init__(self, **kwargs): self.__dict__.update(kwargs)
         def calculate_distribution(self, target_k, skin_ratio, n_skin_elements, n_env_elements, **kwargs):
-            # ... (代码同上, 此处省略)
-            return 1,1
+            weight_skin = self.enhanced_skin_weight if skin_ratio > self.skin_ratio_threshold else self.default_skin_weight
+            weighted_skin = n_skin_elements * weight_skin; weighted_env = n_env_elements
+            total_weight = weighted_skin + weighted_env
+            if total_weight == 0: return target_k // 2, target_k - target_k // 2
+            k_skin = int(round(target_k*weighted_skin/total_weight))
+            k_env = target_k - k_skin
+            if k_skin < 1 and k_env > 1: k_skin=1; k_env=target_k-1
+            if k_env < 1 and k_skin > 1: k_env=1; k_skin=target_k-1
+            return k_skin, k_env
+        def suggest_adjustment(self, actual, target, current):
+            if abs(actual - target) <= 1: return current
+            return current + (target - actual)
         def suggest_adjustment(self, actual, target, current): return current
 
 SATURATION_FACTOR = svg_config.QUANTIZATION_CONFIG["saturation_factor"]
@@ -38,7 +48,7 @@ class SVGDigitalPaintingProcessor:
         self.quantizer = RegionAwareSVGQuantizer(use_gpu)
         self.palette_matcher = SVGPaletteMatcher()
         self.color_strategy = ColorDistributionStrategy(**svg_config.COLOR_DISTRIBUTION_CONFIG)
-        
+
     def process_file(self, svg_file_path: str, output_dir: str, dpi: int = 300):
         # ... (file loading and region mapping parts remain the same) ...
         print(f"\n{'='*60}\n开始处理: {os.path.basename(svg_file_path)}\n{'='*60}")
@@ -70,12 +80,12 @@ class SVGDigitalPaintingProcessor:
             
             importance_weights = region_mapper.get_element_importance_weights(skin_indices, eye_indices, mouth_indices)
 
-            # print("\n开始迭代式颜色量化...")
+            print("\n开始迭代式颜色量化...")
             quantized_mapping = self._quantize_regions_iteratively(
                 facial_elements, env_elements, target_k, skin_ratio, importance_weights
             )
             
-            # print("\n进行色板匹配...")
+            print("\n进行色板匹配...")
             # 【适配】将量化结果和原始皮肤元素传入
             final_color_mapping = self.palette_matcher.match_svg_colors(
                 quantized_mapping, skin_elements, env_elements
@@ -103,7 +113,7 @@ class SVGDigitalPaintingProcessor:
             k_facial, k_env = self.color_strategy.calculate_distribution(
                 current_k, skin_ratio, facial_elements, env_elements
             )
-            # print(f"迭代 {iteration+1}: 量化目标(面部 {k_facial}, 环境 {k_env}) | 总目标 {current_k}")
+            print(f"迭代 {iteration+1}: 量化目标(面部 {k_facial}, 环境 {k_env}) | 总目标 {current_k}")
 
             color_mapping = self.quantizer.quantize_by_regions(
                 facial_elements, env_elements, k_facial, k_env, 
@@ -115,7 +125,7 @@ class SVGDigitalPaintingProcessor:
                  print("警告：量化未产生颜色，提前中止。"); break
 
             diff = abs(unique_colors - current_k)
-            # print(f"迭代 {iteration+1}: 实际颜色数 = {unique_colors}")
+            print(f"迭代 {iteration+1}: 实际颜色数 = {unique_colors}")
 
             if diff < best_diff:
                 best_diff, best_result = diff, color_mapping.copy()
@@ -124,7 +134,7 @@ class SVGDigitalPaintingProcessor:
             current_k = self.color_strategy.suggest_adjustment(unique_colors, current_k, current_k)
         
         final_colors = len(set(best_result.values()))
-        # print(f"\n量化完成，最终颜色数: {final_colors}")
+        print(f"\n量化完成，最终颜色数: {final_colors}")
         return best_result
 
     # 其他方法 _save_results, process_folder, main 等无需修改
@@ -145,7 +155,7 @@ class SVGDigitalPaintingProcessor:
         svg_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith('.svg')]
         if not svg_files: print("未找到SVG文件"); return
         
-        # print(f"找到 {len(svg_files)} 个SVG文件")
+        print(f"找到 {len(svg_files)} 个SVG文件")
         for i, svg_file in enumerate(svg_files, 1):
             try: self.process_file(svg_file, output_dir, dpi)
             except Exception as e:
