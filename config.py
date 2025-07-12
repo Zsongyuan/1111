@@ -6,7 +6,7 @@ import glob
 
 # 定义输入和输出目录（请确保这两个文件夹存在或在运行时创建）
 INPUT_DIR = os.path.join(".", "input")
-OUTPUT_DIR = os.path.join(".", "output3")
+OUTPUT_DIR = os.path.join(".", "output4")
 
 # 定义色板文件的路径
 ENV_PALETTE_PATH = os.path.join(".", "palette", "envPalettes", "ENV.xls")

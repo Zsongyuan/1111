@@ -74,7 +74,7 @@ def get_skin_mask(image_path):
 
 if __name__ == '__main__':
     # 测试皮肤分割（需要正确配置阿里云API环境变量）
-    test_image_path = r".\test_out\test_convert_output.png"
+    test_image_path = r"E:\pbn\pbn3\test_out\test_convert_output.png"
     mask = get_skin_mask(test_image_path)
     Image.fromarray(mask).save("skin_mask_test.png")
     print("皮肤mask已保存为 skin_mask_test.png")

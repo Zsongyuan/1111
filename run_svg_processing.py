@@ -57,16 +57,16 @@ def main():
     非交互式主函数：自动以快速模式处理所有输入文件，并最终清理临时文件。
     """
     start_time = time.time()
-    '''print("="*60)
+    print("="*60)
     print("开始 - 自动化处理模式")
-    print("="*60)'''
+    print("="*60)
     
     input_dir, output_dir = "", ""
 
     try:
         import svg_config
         svg_config.PROCESSING_MODE = "fast"
-        # print("模式：已自动设置为 [快速模式]")
+        print("模式：已自动设置为 [快速模式]")
     except ImportError:
         print("错误：无法加载`svg_config.py`，请确保文件存在。")
         return
@@ -95,7 +95,7 @@ def main():
 
     try:
         import svg_main
-        processor = svg_main.FacialFeatureProtectedProcessor(use_gpu=True)
+        processor = svg_main.SVGDigitalPaintingProcessor(use_gpu=True)
         processor.process_folder(input_dir, output_dir, dpi=300)
         
     except KeyboardInterrupt:
