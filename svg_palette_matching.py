@@ -249,7 +249,10 @@ class RobustSVGPaletteMatcher:
                         env_elements: List[Tuple[int, Tuple[int, int, int]]],
                         original_skin_colors: List[Tuple[int, int, int]] = None,
                         target_k: int = None) -> Dict[int, Tuple[int, int, int]]:
-        """严格控制颜色数的SVG颜色匹配"""
+        """
+        [已修复] 严格控制颜色数的SVG颜色匹配。
+        确保所有最终颜色都来自色板。
+        """
         
         print(f"\n开始色板匹配 (目标颜色数: {target_k})")
         print(f"输入: {len(set(quantized_mapping.values()))} 种量化颜色")
@@ -274,6 +277,13 @@ class RobustSVGPaletteMatcher:
 
         print(f"选择的皮肤色板: {palette_name}")
 
+        # 【核心修复】建立一个包含所有可用色板颜色的集合，用于最终的强制匹配
+        all_valid_palette_colors = list(set(skin_map.values()) | set(env_map.values()))
+        if not all_valid_palette_colors:
+             # 如果完全没有色板颜色，只能回退到量化色
+            print("警告: 没有任何有效的色板颜色，将使用量化色。")
+            return quantized_mapping
+
         # 应用匹配结果
         for idx, quantized_color in quantized_mapping.items():
             is_skin = any(idx == skin_idx for skin_idx, _ in skin_elements)
@@ -283,8 +293,18 @@ class RobustSVGPaletteMatcher:
             elif not is_skin and quantized_color in env_map:
                 final_mapping[idx] = env_map[quantized_color]
             else:
-                # 备用匹配
-                final_mapping[idx] = quantized_color
+                # 【核心修复】对于所有未明确匹配的颜色，从所有已选出的色板颜色中寻找一个最接近的进行分配
+                # 这确保了不会有任何非色板颜色被分配
+                print(f"警告: 元素 {idx} 的颜色 {quantized_color} 无法直接匹配。正在执行备用最接近匹配...")
+                
+                # 寻找最接近的颜色
+                color_lab = rgb_to_lab(quantized_color)
+                all_valid_lab = [rgb_to_lab(c) for c in all_valid_palette_colors]
+                
+                distances = [delta_e_2000(color_lab, p_lab) for p_lab in all_valid_lab]
+                best_match_idx = np.argmin(distances)
+                matched_color = all_valid_palette_colors[best_match_idx]
+                final_mapping[idx] = tuple(int(c) for c in matched_color)
 
         # 严格验证和限制颜色数
         unique_final_colors = list(set(final_mapping.values()))
