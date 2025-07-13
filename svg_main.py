@@ -50,7 +50,6 @@ class SVGDigitalPaintingProcessor:
         self.color_strategy = ColorDistributionStrategy(**svg_config.COLOR_DISTRIBUTION_CONFIG)
 
     def process_file(self, svg_file_path: str, output_dir: str, dpi: int = 300):
-        # ... (file loading and region mapping parts remain the same) ...
         print(f"\n{'='*60}\n开始处理: {os.path.basename(svg_file_path)}\n{'='*60}")
         target_k = getK.extract_k_value(svg_file_path)
         print(f"目标颜色数: {target_k}")
@@ -58,9 +57,11 @@ class SVGDigitalPaintingProcessor:
         svg_parser = SVGParser(svg_file_path)
         elements = svg_parser.parse()
         
+        # 渲染位图，用于皮肤分割和颜色分配
         bitmap = svg_parser.render_to_bitmap(dpi=dpi)
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
             temp_bitmap_path = tmp_file.name
+            # imwrite需要BGR格式
             cv2.imwrite(temp_bitmap_path, cv2.cvtColor(bitmap, cv2.COLOR_RGB2BGR))
         
         try:
@@ -81,12 +82,12 @@ class SVGDigitalPaintingProcessor:
             importance_weights = region_mapper.get_element_importance_weights(skin_indices, eye_indices, mouth_indices)
 
             print("\n开始迭代式颜色量化...")
+            # 【核心修复】将 bitmap 和 skin_mask 传递给迭代量化函数
             quantized_mapping = self._quantize_regions_iteratively(
-                facial_elements, env_elements, target_k, skin_ratio, importance_weights
+                facial_elements, env_elements, target_k, skin_ratio, importance_weights, bitmap, skin_mask
             )
             
             print("\n进行色板匹配...")
-            # 【适配】将量化结果和原始皮肤元素传入
             final_color_mapping = self.palette_matcher.match_svg_colors(
                 quantized_mapping, skin_elements, env_elements
             )
@@ -104,14 +105,16 @@ class SVGDigitalPaintingProcessor:
                                     target_k: int,
                                     skin_ratio: float,
                                     importance_weights: Dict[int, float],
+                                    bitmap: np.ndarray,         # <-- 接收 bitmap
+                                    skin_mask: np.ndarray,        # <-- 接收 skin_mask
                                     max_iterations: int = 5) -> Dict[int, Tuple[int, int, int]]:
         current_k = target_k
         best_result, best_diff = {}, float('inf')
 
         for iteration in range(max_iterations):
-            # 【适配】将完整的元素列表传给策略函数
+            # 【核心修复】使用正确的参数调用新的颜色分配策略
             k_facial, k_env = self.color_strategy.calculate_distribution(
-                current_k, skin_ratio, facial_elements, env_elements
+                current_k, skin_ratio, bitmap, skin_mask
             )
             print(f"迭代 {iteration+1}: 量化目标(面部 {k_facial}, 环境 {k_env}) | 总目标 {current_k}")
 
@@ -137,7 +140,6 @@ class SVGDigitalPaintingProcessor:
         print(f"\n量化完成，最终颜色数: {final_colors}")
         return best_result
 
-    # 其他方法 _save_results, process_folder, main 等无需修改
     def _save_results(self, svg_parser, color_mapping, original_path, output_dir):
         base_name = os.path.basename(original_path)
         output_svg_path = os.path.join(output_dir, base_name)
